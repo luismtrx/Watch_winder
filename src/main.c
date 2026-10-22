@@ -29,60 +29,57 @@ static void IRAM_ATTR button_isr_handler(void *arg)
 }
 
 
-// function for menu selector
-int menu_select (int arr[2], int set_sec){
-    int states = 6;
-    int next_state = 0;
-    int present_state = arr[1]; 
+// function for menu selection for count down timer
+void menu_select (int arr[], int *set_sec){
+    static int states = 0;
+    int present_state = arr[0];
+    *set_sec = 0;
     //switch case to cycle through different times
     const char* menu[NUM_OPTIONS] = {
         "10 seconds",
         "20 seconds",
         "30 seconds",
         "40 seconds",
-
+        "50 seconds",
+        "60 seconds"
     };
-        for (int i = 0; i < states; i++){
-            if (present_state == 1){
-                next_state =+ i;
-            } else if(next_state == 6){
-                next_state = 0;
-            }
+        
+    states = (states + 1) % NUM_OPTIONS; // cycle through states
+        
 
         // switch statment that is determined by the current states
-        switch (i){
+        switch (present_state){
             case 1:
-            printf(menu[i]);
-            set_sec = 10;
+            printf("10 seconds\n");
+            *set_sec = 10;
             break;
 
             case 2:
-            printf(menu[i]);
-            set_sec = 20;
+            printf("20 seconds\n");
+            *set_sec = 20;
             break;
 
             case 3:
-            printf(menu[i]);
-            set_sec = 30;
+            printf("30 seconds\n");
+            *set_sec = 30;
             break;
 
             case 4:
-            printf(menu[i]);
-            set_sec = 40; 
+            printf("40 seconds\n");
+            *set_sec = 40; 
             break;
 
             case 5:
-            printf(menu[i]);
-            set_sec = 50;
+            printf("50 seconds\n");
+            *set_sec = 50;
             break;
             
             case 6:
-            printf(menu[i]);
-            set_sec = 60;
+            printf("60 seconds\n");
+            *set_sec = 60;
             break;
         }
-        return set_sec;
-        };
+        
 
     
 /*
@@ -100,13 +97,13 @@ the desired time.
 
 
 // handles the count down feature
-void timer_func (int arr[2]){
+void timer_func (int arr[]){
     int seconds = 0; // user selection
     printf("please enter time: ");
-    menu_select(arr[2],seconds);
+    menu_select(arr[1], &seconds);
 
     // saves the state of the button for start and stop
-    int set_state = arr[2];
+    int set_state = arr[0];
 
     printf("press to start timer"); 
     
@@ -136,7 +133,7 @@ void timer_func (int arr[2]){
 static void button_task(void *arg)
 {
     uint32_t gpio_num;
-    int64_t last_press[2] = {0, 0};   // [0] = button 1, [1] = button 2
+    int64_t last_press[] = {0, 0};   // [0] = button 1, [1] = button 2
 
     while (1) {
         if (xQueueReceive(button_evt_queue, &gpio_num, portMAX_DELAY)) {
@@ -144,7 +141,7 @@ static void button_task(void *arg)
             const char *name;
 
             if (gpio_num == BUTTON_1_GPIO)      { idx = 0; name = "Button 1"; }
-            //else if (gpio_num == BUTTON_2_GPIO) {idx = 1;}    // for final logic 
+            //else if (gpio_num == BUTTON_2_GPIO) {idx = 1;                   }    // for final logic 
             else if (gpio_num == BUTTON_2_GPIO) { idx = 1; name = "Button 2"; }
             else continue;                       // unknown pin, ignore
 
