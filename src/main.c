@@ -32,9 +32,14 @@ static void IRAM_ATTR button_isr_handler(void *arg)
 // function for menu selection for count down timer
 void menu_select (int arr[], int *set_sec){
     static int states = 0;
-    int present_state = arr[0];
+    arr[0] = states; // static variable to hold the current state
     *set_sec = 0;
+
+
+    /*
+    place holder for when we use the display to show the current state of the menu selection
     //switch case to cycle through different times
+    
     const char* menu[NUM_OPTIONS] = {
         "10 seconds",
         "20 seconds",
@@ -43,43 +48,44 @@ void menu_select (int arr[], int *set_sec){
         "50 seconds",
         "60 seconds"
     };
-        
-    states = (states + 1) % NUM_OPTIONS; // cycle through states
-        
+      */
+     
+              
 
         // switch statment that is determined by the current states
-        switch (present_state){
-            case 1:
+        switch (states) {
+            case 0:
             printf("10 seconds\n");
             *set_sec = 10;
             break;
 
-            case 2:
+            case 1:
             printf("20 seconds\n");
             *set_sec = 20;
             break;
 
-            case 3:
+            case 2:
             printf("30 seconds\n");
             *set_sec = 30;
             break;
 
-            case 4:
+            case 3:
             printf("40 seconds\n");
             *set_sec = 40; 
             break;
 
-            case 5:
+            case 4:
             printf("50 seconds\n");
             *set_sec = 50;
             break;
             
-            case 6:
+            case 5:
             printf("60 seconds\n");
             *set_sec = 60;
             break;
         }
         
+    states = (states + 1) % NUM_OPTIONS; // cycle through states
 
     
 /*
@@ -96,14 +102,18 @@ the desired time.
 
 
 
-// handles the count down feature
+/* handles the count down feature
+    arr[0 ] --> holds the time selected by the user
+    arr[1] --> holds the state of the button for start and stop
+*/
+
 void timer_func (int arr[]){
     int seconds = 0; // user selection
     printf("please enter time: ");
-    menu_select(arr[1], &seconds);
+    menu_select(&arr[0], &seconds);
 
     // saves the state of the button for start and stop
-    int set_state = arr[0];
+    int set_state = arr[1];
 
     printf("press to start timer"); 
     
@@ -126,7 +136,8 @@ void timer_func (int arr[]){
 
 
 
-
+static int menu_data[2] = {0, 0};
+static int set_sec = 0; // variable to hold the time selected by the user  for test pruposes
 
 
 //Task: handles events outside the ISR
@@ -134,14 +145,13 @@ static void button_task(void *arg)
 {
     uint32_t gpio_num;
     int64_t last_press[] = {0, 0};   // [0] = button 1, [1] = button 2
-
+  
     while (1) {
         if (xQueueReceive(button_evt_queue, &gpio_num, portMAX_DELAY)) {
             int idx;
             const char *name;
 
             if (gpio_num == BUTTON_1_GPIO)      { idx = 0; name = "Button 1"; }
-            //else if (gpio_num == BUTTON_2_GPIO) {idx = 1;                   }    // for final logic 
             else if (gpio_num == BUTTON_2_GPIO) { idx = 1; name = "Button 2"; }
             else continue;                       // unknown pin, ignore
 
@@ -153,6 +163,17 @@ static void button_task(void *arg)
 
             if (gpio_get_level(gpio_num) == 0) { // confirm still pressed (active-low)
                 ESP_LOGI(TAG, "%s pressed", name);
+
+                // call the menu select function to cycle through the different time options
+                if (idx == 0){
+                    menu_select(menu_data, &set_sec);
+                    ESP_LOGI(TAG, "index=%d seconds=%d",menu_data[0], set_sec);
+                }
+                else if (idx == 1){
+                    menu_data[1] = !menu_data[1]; // set the state to start the timer
+                    ESP_LOGI(TAG, "state=%d", menu_data[1]);
+                }
+
             }
         }
     }
@@ -173,7 +194,8 @@ void app_main(void)
 
     button_evt_queue = xQueueCreate(10, sizeof(uint32_t));
 
-    xTaskCreate(button_task, "button_task", 2048, NULL, 10, NULL);
+    // raised the stack size to 4096 to avoid stack overflow error
+    xTaskCreate(button_task, "button_task", 4096, NULL, 10, NULL);
 
     gpio_install_isr_service(0);   // call ONCE for the whole program
     gpio_isr_handler_add(BUTTON_1_GPIO, button_isr_handler, (void *)BUTTON_1_GPIO);
