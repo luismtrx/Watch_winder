@@ -30,7 +30,7 @@ static void IRAM_ATTR button_isr_handler(void *arg)
 
 
 // function for menu selection for count down timer
-void menu_select (int arr[], int *set_sec){
+void menu_select (int volatile arr[], int volatile *set_sec){
     static int states = 0;
     arr[0] = states; // static variable to hold the current state
     *set_sec = 0;
@@ -94,7 +94,6 @@ this is because we want the user to go back to the first option instead of
 exiting the loop. the user will have more flexability that way in chooseing
 the desired time.
 */
-
 }
 
 
@@ -107,27 +106,25 @@ the desired time.
     arr[1] --> holds the state of the button for start and stop
 */
 
-void timer_func (int arr[]){
-    int seconds = 0; // user selection
-    printf("please enter time: ");
-    menu_select(&arr[0], &seconds);
-
-    // saves the state of the button for start and stop
-    int set_state = arr[1];
-
-    printf("press to start timer"); 
+void timer_func (int volatile arr[], int volatile seconds){
+    int sec = seconds; // variable to hold the time selected by the user
+    printf("Slected Time: %d seconds\n", sec);
+    printf("Timer has Started\n"); 
     
-    while (set_state == 1 && seconds > 0){
-        int s = seconds %60; 
+    while (sec > 0 && arr[1] != 0){
+        int s = sec %60; 
 
-        // this will eventually be printed out to the display
-        printf("\r%02d", s);
-        fflush(stdout);
-        clock_t stop = clock() + CLOCKS_PER_SEC;
-        while (clock() < stop) {}
-        seconds --;
+        if (arr[1] == 1){
+            printf("\r%02d", s);
+            fflush(stdout);
+            vTaskDelay(pdMS_TO_TICKS(1000));// delay for 1 second
+            sec --; 
+        }else{
+            vTaskDelay(pdMS_TO_TICKS(100)); // check again 
+        }
     }
-
+    printf("\r00\n");
+    
 }
 
 
@@ -136,8 +133,11 @@ void timer_func (int arr[]){
 
 
 
-static int menu_data[2] = {0, 0};
-static int set_sec = 0; // variable to hold the time selected by the user  for test pruposes
+
+
+
+static volatile int menu_data[2] = {0, 0};
+static volatile int set_sec = 0; // variable to hold the time selected by the user  for test pruposes
 
 
 //Task: handles events outside the ISR
@@ -171,9 +171,14 @@ static void button_task(void *arg)
                 }
                 else if (idx == 1){
                     menu_data[1] = !menu_data[1]; // set the state to start the timer
-                    ESP_LOGI(TAG, "state=%d", menu_data[1]);
+                    ESP_LOGI(TAG, "state=%d index=%d    seconds=%d ", menu_data[1], idx, set_sec);        //shows the state 1 start and 0 stop
+                    if (menu_data[1] == 1){ 
+                        timer_func(menu_data, set_sec);
+                    }else if(idx == 0){
+                        ESP_LOGI(TAG, "Timer has Stopped");
+                        
+                    }
                 }
-
             }
         }
     }
