@@ -102,7 +102,7 @@ the desired time.
 
 
 /* handles the count down feature
-    arr[0 ] --> holds the time selected by the user
+    arr[0] --> holds the time selected by the user
     arr[1] --> holds the state of the button for start and stop
 */
 
@@ -111,11 +111,12 @@ void timer_func (int volatile arr[], int volatile seconds){
     printf("Slected Time: %d seconds\n", sec);
     printf("Timer has Started\n"); 
     
-    while (sec > 0 && arr[1] != 0){
+    while (sec > 0){
         int s = sec %60; 
 
         if (arr[1] == 1){
-            printf("\r%02d", s);
+            //printf("\r%02d", s);
+            printf("%02d\n", s);
             fflush(stdout);
             vTaskDelay(pdMS_TO_TICKS(1000));// delay for 1 second
             sec --; 
@@ -127,22 +128,26 @@ void timer_func (int volatile arr[], int volatile seconds){
     
 }
 
-
-
-
-
-
-
-
-
-
 static volatile int menu_data[2] = {0, 0};
 static volatile int set_sec = 0; // variable to hold the time selected by the user  for test pruposes
 
+void countdown_task (void *arg){
+    while (1) {
+        if (menu_data[1] == 1 && set_sec > 0) { // check if the timer is started
+            timer_func(menu_data, set_sec);
+            menu_data[1] = 0; // reset the state after the timer finishes
+        }else {
+        vTaskDelay(pdMS_TO_TICKS(50)); // check every 100 ms
+    }
+    }
+}
+
+
+
+
 
 //Task: handles events outside the ISR
-static void button_task(void *arg)
-{
+static void button_task(void *arg){
     uint32_t gpio_num;
     int64_t last_press[] = {0, 0};   // [0] = button 1, [1] = button 2
   
@@ -170,18 +175,14 @@ static void button_task(void *arg)
                     ESP_LOGI(TAG, "index=%d seconds=%d",menu_data[0], set_sec);
                 }
                 else if (idx == 1){
-                    menu_data[1] = !menu_data[1]; // set the state to start the timer
-                    ESP_LOGI(TAG, "state=%d index=%d    seconds=%d ", menu_data[1], idx, set_sec);        //shows the state 1 start and 0 stop
-                    if (menu_data[1] == 1){ 
-                        timer_func(menu_data, set_sec);
-                    }else if(idx == 0){
-                        ESP_LOGI(TAG, "Timer has Stopped");
-                        
+                    if (set_sec > 0){
+                        menu_data[1] = !menu_data[1]; // toggle the state of the button for start and stop
+                        ESP_LOGI(TAG, "state=%d second=%d", menu_data[1], set_sec);
                     }
-                }
             }
         }
     }
+}
 }
 
 void app_main(void)
@@ -201,6 +202,7 @@ void app_main(void)
 
     // raised the stack size to 4096 to avoid stack overflow error
     xTaskCreate(button_task, "button_task", 4096, NULL, 10, NULL);
+    xTaskCreate(countdown_task, "countdown_task", 4096, NULL, 5, NULL);
 
     gpio_install_isr_service(0);   // call ONCE for the whole program
     gpio_isr_handler_add(BUTTON_1_GPIO, button_isr_handler, (void *)BUTTON_1_GPIO);
