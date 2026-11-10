@@ -1,9 +1,11 @@
 #include <stdio.h>
+#include <stdint.h>
 #include <time.h>
 #include "freertos/FreeRTOS.h" 
 #include "freertos/task.h"
 #include "freertos/queue.h"
 #include "driver/gpio.h"
+#include "driver/ledc.h"
 #include "esp_log.h"
 #include "esp_timer.h"          // needed for esp_timer_get_time()
 
@@ -11,16 +13,91 @@
 
 
 // Pin assignments
-#define BUTTON_1_GPIO   GPIO_NUM_25
-#define BUTTON_2_GPIO   GPIO_NUM_27
+#define BUTTON_1_GPIO   GPIO_NUM_25         // GPIO pin for button 1
+#define BUTTON_2_GPIO   GPIO_NUM_27         // GPIO pin for button 2    
+#define ENABLE_PIN      GPIO_NUM_18         // EN1: driven by LEDC so it can do on/off and PWM
+#define DIRA_PIN        GPIO_NUM_19         // IN1
+#define DIRB_PIN        GPIO_NUM_5          // IN2
+
+// LEDC channel timer (frequency and resolution) configuration
+#define PWM_MODE         LEDC_LOW_SPEED_MODE
+#define PWM_TIMER        LEDC_TIMER_0
+#define PWM_CHANNEL      LEDC_CHANNEL_0     // 8 bit - duty cycle resolution (0-255)
+#define PWM_RESOLUTION    LEDC_TIMER_8_BIT
+#define PWM_FREQUENCY_HZ    1000            // 1 kHz PWM frequency but suitable for change if we want to see how it affects the motor speed
+
+#define DUTY_MAX         255                 // maximum duty cycle for 8-bit resolution
+#define DUTY_OFF         0                   // duty cycle for motor off
+
+
 
 #define DEBOUNCE_US     20000   // 20 ms debounce window (in microseconds)
 
 static const char *TAG = "button";
+static const char *TAG2 = "motor";
 static QueueHandle_t button_evt_queue = NULL;
 
+
+static void motor_set_enable(uint32_t duty)
+{
+    ESP_ERROR_CHECK(ledc_set_duty(PWM_MODE, PWM_CHANNEL, duty));
+    ESP_ERROR_CHECK(ledc_update_duty(PWM_MODE, PWM_CHANNEL));
+}
+
+
+// sets the direction of the motors 
+static void motor_set_direction(int dir_a, int dir_b)
+{
+    ESP_ERROR_CHECK(gpio_set_level(DIRA_PIN, dir_a));
+    ESP_ERROR_CHECK(gpio_set_level(DIRB_PIN, dir_b));
+}
+
+
+// blocking delay in ms
+static inline void delay_ms(uint32_t ms)
+{
+    vTaskDelay(pdMS_TO_TICKS(ms));
+}
+
+
+static void motor_init(void)
+{
+    // configure the direction pins as outputs
+    gpio_config_t io_conf = {
+        .pin_bit_mask = (1ULL << DIRA_PIN) | (1ULL << DIRB_PIN),
+        .mode         = GPIO_MODE_OUTPUT,
+        .pull_up_en   = GPIO_PULLUP_DISABLE,
+        .pull_down_en = GPIO_PULLDOWN_DISABLE,
+        .intr_type    = GPIO_INTR_DISABLE,
+    };
+    ESP_ERROR_CHECK(gpio_config(&io_conf));
+    motor_set_direction(0, 0);              // start both motors low so the motor is idle
+    
+    
+    // configure the LEDC timer for PWM
+    ledc_timer_config_t ledc_timer = {
+        .speed_mode       = PWM_MODE,
+        .timer_num        = PWM_TIMER,
+        .duty_resolution  = PWM_RESOLUTION,  
+        .freq_hz          = PWM_FREQUENCY_HZ,
+        .clk_cfg          = LEDC_AUTO_CLK,
+    };
+    ESP_ERROR_CHECK(ledc_timer_config(&ledc_timer));
+
+    ledc_channel_config_t chan_conf = {
+        .gpio_num       = ENABLE_PIN,
+        .speed_mode     = PWM_MODE,
+        .channel        = PWM_CHANNEL,
+        .timer_sel      = PWM_TIMER,
+        .duty           = DUTY_OFF,          // start with motor off
+        .hpoint         = 0,
+    };
+    ESP_ERROR_CHECK(ledc_channel_config(&chan_conf));
+}
+
+
 // Interrupt Service Routine
-// Generic: it just forwards whichever pin fired it. One ISR serves both
+// Generic--> it just forwards whichever pin fired it. One ISR serves both
 // buttons because each one is registered with its own GPIO number as arg.
 static void IRAM_ATTR button_isr_handler(void *arg)
 {
@@ -115,8 +192,8 @@ void timer_func (int volatile arr[], int volatile seconds){
         int s = sec %60; 
 
         if (arr[1] == 1){
-            //printf("\r%02d", s);
-            printf("%02d\n", s);
+            //printf("\r%02d", s);  // counts down on the same line and dosns't replace the replaced text
+            printf("%02d\n", s);    
             fflush(stdout);
             vTaskDelay(pdMS_TO_TICKS(1000));// delay for 1 second
             sec --; 
