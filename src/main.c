@@ -1,6 +1,5 @@
 #include <stdio.h>
 #include <stdint.h>
-#include <time.h>
 #include "freertos/FreeRTOS.h" 
 #include "freertos/task.h"
 #include "freertos/queue.h"
@@ -26,7 +25,7 @@
 #define PWM_RESOLUTION    LEDC_TIMER_8_BIT
 #define PWM_FREQUENCY_HZ    1000            // 1 kHz PWM frequency but suitable for change if we want to see how it affects the motor speed
 
-#define DUTY_MAX         255                 // maximum duty cycle for 8-bit resolution
+#define DUTY_MAX         255                 // maximum duty cycle for 8-bit resolution is 255 but we dont need it that fast
 #define DUTY_OFF         0                   // duty cycle for motor off
 
 
@@ -214,14 +213,23 @@ void countdown_task (void *arg){
             timer_func(menu_data, set_sec);
             menu_data[1] = 0; // reset the state after the timer finishes
         }else {
-        vTaskDelay(pdMS_TO_TICKS(50)); // check every 100 ms
+        vTaskDelay(pdMS_TO_TICKS(50)); // check every 50 ms
     }
     }
 }
 
 
-
-
+static void motor_task(void *arg){
+    while (1) {
+        if (menu_data[1] == 1) { // check if the start button is pressed 
+            motor_set_enable(DUTY_MAX); // turn on the motor at full speed
+            motor_set_direction(1,0); // set the motor direction
+        } else {
+            motor_set_enable(DUTY_OFF); // turn off the motor
+        }
+        vTaskDelay(pdMS_TO_TICKS(50)); // check every 50 ms
+    }
+}
 
 //Task: handles events outside the ISR
 static void button_task(void *arg){
@@ -255,6 +263,7 @@ static void button_task(void *arg){
                     if (set_sec > 0){
                         menu_data[1] = !menu_data[1]; // toggle the state of the button for start and stop
                         ESP_LOGI(TAG, "state=%d second=%d", menu_data[1], set_sec);
+                        
                     }
             }
         }
@@ -264,6 +273,7 @@ static void button_task(void *arg){
 
 void app_main(void)
 {
+    motor_init();   // configure the motor pins and PWM
     // Configure both pins at once: input, internal pull-up, falling-edge interrupt.
     // Works in one struct because both buttons want identical settings.
     gpio_config_t io_conf = {
@@ -280,6 +290,7 @@ void app_main(void)
     // raised the stack size to 4096 to avoid stack overflow error
     xTaskCreate(button_task, "button_task", 4096, NULL, 10, NULL);
     xTaskCreate(countdown_task, "countdown_task", 4096, NULL, 5, NULL);
+    xTaskCreate(motor_task, "motor_task", 4096, NULL, 5, NULL);
 
     gpio_install_isr_service(0);   // call ONCE for the whole program
     gpio_isr_handler_add(BUTTON_1_GPIO, button_isr_handler, (void *)BUTTON_1_GPIO);
